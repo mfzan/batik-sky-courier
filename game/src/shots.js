@@ -100,6 +100,8 @@ export function stageShot(name, seed) {
       w.throttle = 0.6;
       runSteps(w, 60 * 3, dt);
     }
+    // Campaign state: legs 1–2 already delivered their parcels before leg 3.
+    w.parcels = 2;
     return w;
   }
   if (name === 'approach') {
@@ -118,9 +120,11 @@ export function stageShot(name, seed) {
     w.speed = 48;
     w.throttle = 0.42;
     w.flaps = true;
-    // All rings flown: mark every ring passed so none looms in front of
-    // the plane, and the banner reads "all rings done — land!".
-    for (const r of w.rings) r.passed = true;
+    // All rings flown: mark every ring passed AND hit so none looms in front
+    // of the plane, the counter reads 6/6, and the banner reads "all rings
+    // done — land!". (Hit rings are skipped by both the step logic and the
+    // ring drawing, so this changes only the staged frame.)
+    for (const r of w.rings) { r.passed = true; r.hit = true; }
     w.nextRing = w.rings.length;
     runSteps(w, 60 * 2, dt);
     // Hold the slow approach pose for the frozen frame.
@@ -129,6 +133,9 @@ export function stageShot(name, seed) {
     w.alt = 125;
     w.heading = 0;
     w.roll = 0;
+    // Campaign state: 4 parcels delivered on legs 1–4, score to match.
+    w.parcels = 4;
+    w.score = 6400;
     return w;
   }
   if (name === 'storm') {
@@ -151,6 +158,8 @@ export function stageShot(name, seed) {
       runSteps(w, 60 * 3, dt);
     }
     w.flash = 0.55; // guarantee a visible flash in the shot
+    // Campaign state: legs 1–3 already delivered their parcels before leg 4.
+    w.parcels = 3;
     return w;
   }
   // Default: plain mid-flight.
