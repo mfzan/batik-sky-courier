@@ -12,26 +12,50 @@ import { LEGS } from './config.js';
 export function autopilotAxes(w) {
   const target = w.rings[w.nextRing] || null;
   const tx = target ? target.x : 0;
-  let talt = target ? target.alt : 120;
+  // Final approach target: the strip itself (ground at the runway + ~8),
+  // not 55 — holding 55 made the plane float above touchdown forever.
+  let talt = target ? target.alt : groundHeight(w, 0, w.runwayZ) + 8;
   const tz = target ? target.z : w.runwayZ;
-  // Altitude floor: stay well clear of terrain/volcano ahead.
+  // Start coming down well before the runway: cap the target altitude
+  // once the strip is 2500 m out, so high storm rings don't leave the
+  // plane 150 m up with nowhere to descend to.
+  const distToRunway = w.runwayZ - w.z;
+  // Caps sit just below the late-ring altitudes (180/140) so the plane
+  // can still thread them (ring radius 26) while coming down early.
+  if (distToRunway < 2500) talt = Math.min(talt, 160);
+  if (distToRunway < 1600) talt = Math.min(talt, 120);
+  // Altitude floor: stay well clear of terrain/volcano ahead en route;
+  // on final the margin shrinks to just above the strip.
   const ghAhead = Math.max(groundHeight(w, w.x, w.z + 200), groundHeight(w, tx, tz));
-  talt = Math.max(talt, ghAhead + 45);
+  talt = Math.max(talt, ghAhead + (target ? 45 : 6));
   // Desired heading points at the target; roll closes the heading error.
+  // Wider heading authority on final approach so gusts can't push the
+  // plane off the strip.
   const dx = tx - w.x;
   const dz = Math.max(120, tz - w.z);
-  const targetHeading = Math.max(-0.45, Math.min(0.45, Math.atan2(dx, dz)));
+  const hdgLimit = target ? 0.45 : 0.6;
+  const targetHeading = Math.max(-hdgLimit, Math.min(hdgLimit, Math.atan2(dx, dz)));
   const roll = Math.max(-1, Math.min(1, (w.heading - targetHeading) * 2.2));
   // Altitude error: pitch toward target altitude.
   const da = talt - w.alt;
-  const pitch = Math.max(-1, Math.min(1, da / 45));
-  // Throttle: fast en route, slow near the runway.
-  const distToRunway = w.runwayZ - w.z;
+  let pitch = Math.max(-1, Math.min(1, da / 45));
+  // Throttle: fast en route; on final, hold ~40 kt instead of cutting to
+  // idle — cutting to idle collapsed speed into a stall on every leg.
   let throttle = 0;
-  if (!target && distToRunway < 500) throttle = -1; // slow down for landing
-  else if (w.speed < 52) throttle = 1;
+  if (!target && distToRunway < 1200) {
+    if (w.speed > 50) throttle = -1;
+    else if (w.speed < 38) throttle = 1;
+  } else if (w.speed < 52) throttle = 1;
   else if (w.speed > 66) throttle = -1;
-  const flaps = !target && distToRunway < 420;
+  const flaps = !target && distToRunway < 450;
+  if (!target && distToRunway < 1200) {
+    // Two-phase final: firm descent to 300 m out, then a gentle sink.
+    // (One flat -0.3 cap floated the plane over the runway on every leg.)
+    if (distToRunway > 300) pitch = Math.max(-0.6, Math.min(0.4, pitch));
+    else pitch = Math.max(-0.35, Math.min(0.4, pitch));
+    // Flare only once low: near-level, gentle sink onto the strip.
+    if (distToRunway < 250 && w.alt < 46) pitch = Math.max(-0.12, Math.min(0.15, pitch));
+  }
   return { pitch, roll, throttle, flaps, mouseRoll: 0, mousePitch: 0 };
 }
 

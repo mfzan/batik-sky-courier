@@ -109,8 +109,9 @@ export function ringPlan(legIndex) {
   const fracs = [0.14, 0.30, 0.46, 0.60, 0.74, 0.87];
   const lats = [-70, 60, -40, 90, -80, 30];
   const alts = [150, 190, 170, 210, 180, 140];
-  // Leg 4 storm rings sit higher to clear the volcano.
-  const altBoost = legIndex === 3 ? 55 : 0;
+  // Leg 4 storm rings sit a little higher to clear the volcano — but not
+  // so high that the plane can't get down to the runway afterwards.
+  const altBoost = legIndex === 3 ? 25 : 0;
   const latBoost = legIndex === 3 ? 12 : 0;
   return fracs.map((f, i) => ({
     frac: f,

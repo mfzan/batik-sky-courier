@@ -158,22 +158,29 @@ export function stepWorld(w, axes, dt) {
   const gust = w.gust * (leg.weather === 'storm' ? 1.6 : 0.6);
 
   // Controls: blend keyboard and mouse steering.
+  // Pitch authority used to be scaled by 0.55 (max pitch ±0.385), so the
+  // plane could not sink faster than ~4 m/s on final and floated over
+  // every runway. Full authority: max pitch ±0.7.
   const rollTarget = clamp(axes.roll * 0.85 + axes.mouseRoll * 0.45, -1, 1) * 0.9;
-  const pitchTarget = clamp(axes.pitch * 0.7 + axes.mousePitch * 0.35, -1, 1) * 0.55;
+  const pitchTarget = clamp(axes.pitch * 0.7 + axes.mousePitch * 0.35, -1, 1);
   w.roll += (rollTarget - w.roll) * Math.min(1, dt * 3.2);
   w.pitch += (pitchTarget - w.pitch) * Math.min(1, dt * 2.6);
   w.throttle = clamp(w.throttle + axes.throttle * dt * 0.55, 0.15, 1);
   w.flaps = axes.flaps;
 
-  // Speed: throttle drives it, flaps and climb bleed it.
-  const targetSpeed = P.minSpeed + (P.maxSpeed - P.minSpeed) * w.throttle
-    - Math.max(0, w.pitch) * 14 - (w.flaps ? 16 : 0);
+  // Speed: throttle drives it, flaps and climb bleed it. The speed floor
+  // keeps the plane flyable on final — the old flap drag (-16) collapsed
+  // speed to ~13, where stall sink then sank the plane into the hillside.
+  let targetSpeed = P.minSpeed + (P.maxSpeed - P.minSpeed) * w.throttle
+    - Math.max(0, w.pitch) * 14 - (w.flaps ? 9 : 0);
+  targetSpeed = Math.max(26, targetSpeed);
   w.speed += (targetSpeed - w.speed) * Math.min(1, dt * 0.8);
   w.speed = clamp(w.speed, 8, P.maxSpeed + 6);
 
   // Vertical speed from pitch and speed.
   w.vspeed = w.pitch * P.climbRate * (w.speed / P.cruiseSpeed) - (w.flaps ? 4 : 0);
-  if (w.speed < 26) w.vspeed -= (26 - w.speed) * 0.7; // stall sink
+  // Stall sink, capped so it can never overpower a climb command.
+  if (w.speed < 26) w.vspeed -= Math.min(6, (26 - w.speed) * 0.7);
   w.alt += w.vspeed * dt;
   w.alt = Math.max(0, w.alt);
 
@@ -245,14 +252,17 @@ export function stepWorld(w, axes, dt) {
     return ev;
   }
 
-  // Runway landing zone.
-  if (w.z >= w.runwayZ - 160 && w.z <= w.runwayZ + 260) {
+  // Runway landing zone. The window runs to +800 so a plane still sinking
+  // gently after the threshold can touch down instead of being called an
+  // overshoot — the autopilot was at touchdown altitude 1 m past +650.
+  if (w.z >= w.runwayZ - 160 && w.z <= w.runwayZ + 800) {
     const destGh = groundHeight(w, w.x, w.runwayZ);
     if (w.alt <= destGh + 14) {
-      // Touchdown.
+      // Touchdown. Thresholds are firm but human-achievable: a slow,
+      // level flare lands; a fast dive or a wild lateral offset does not.
       const lateralErr = Math.abs(w.x);
-      const speedOk = w.speed < 62;
-      const vsOk = w.vspeed > -9;
+      const speedOk = w.speed < 68;
+      const vsOk = w.vspeed > -12;
       if (lateralErr < 55 && speedOk && vsOk) {
         const quality = lateralErr < 18 && w.speed < 48 && w.vspeed > -5 ? 'PERFECT' : 'GOOD';
         const bonus = quality === 'PERFECT' ? P.perfectLandingBonus : P.goodLandingBonus;
@@ -283,7 +293,7 @@ export function stepWorld(w, axes, dt) {
     }
   }
   // Overshot the runway entirely.
-  if (w.z > w.runwayZ + 300) {
+  if (w.z > w.runwayZ + 850) {
     w.screen = SCREEN.CRASHED;
     w.crashReason = 'You overshot the runway.';
     ev.crashed = true;
